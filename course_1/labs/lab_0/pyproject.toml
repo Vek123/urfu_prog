@@ -1,0 +1,28 @@
+[tool.flake8]
+exclude = [
+    "venv",
+    ".venv",
+    "__pycache__",
+    ".git",
+    "migrations",
+    "build",
+    "dist"
+]
+max-line-length = 120
+inline-quotes = "double"
+import-order-style = "google"
+application-import-names = [
+    "exceptions",
+    "objects",
+    "settings",
+    "main",
+]
+forbidden-functions = """
+    *: sys.path.append, usage of sys.path is banned
+    *: globals, usage of globals is banned
+    *: locals, usage of locals is banned
+"""
+
+[tool.black]
+line-length = 120
+target-version = ["py311"]
