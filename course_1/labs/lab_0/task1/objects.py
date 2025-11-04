@@ -7,7 +7,7 @@ from typing import Any, Callable, Optional
 
 import pygame
 
-from exceptions import GameOver, Win
+from exceptions import GameOver, NextLevel, Win
 from settings import DISPLAY_RESOLUTION
 
 CURRENT_EVENTS = []
@@ -23,6 +23,9 @@ class Screenable(abc.ABC):
 
     @abc.abstractmethod
     def hide(self) -> None: ...
+
+    @abc.abstractmethod
+    def clear(self) -> None: ...
 
 
 class Playable(abc.ABC):
@@ -51,17 +54,21 @@ class Movable(abc.ABC):
 
 class Game:
     def __init__(self, screen: pygame.surface.Surface, framerate: int = 60):
+        self.current_level = 1
+        self.levels: list[Screenable] = [
+            Level1(),
+            Level2,
+            WinMap,
+        ]
         self.screen = screen
         self.framerate = framerate
         self.clock = pygame.time.Clock()
         self.objects_on_screen = set()
-        self.map = self._init_map()
-        self.win_map = WinMap()
         self.win_time = None
 
     def frame(self) -> None:
         self._handle_entities()
-        self.map.show(self.screen)
+        self.levels[self.current_level].show(self.screen)
 
     def start(self) -> None:
         pygame.init()
@@ -79,10 +86,9 @@ class Game:
             if self.win_time:
                 if datetime.datetime.now() - self.win_time > datetime.timedelta(seconds=10):
                     self.win_time = None
-                    self.map.on_screen = True
-                    self.win_map.hide()
+                    self._go_to_level(0)
 
-                self.win_map.show(self.screen)
+                self.levels[self.current_level].show(self.screen)
                 pygame.display.flip()
                 self.clock.tick(self.framerate)
                 continue
@@ -92,14 +98,12 @@ class Game:
                 pygame.display.flip()
                 self.clock.tick(self.framerate)
             except GameOver:
-                self.map.clear()
-                self.map = self._init_map()
+                self._go_to_level(self.current_level)
                 self.clock.tick(self.framerate)
+            except NextLevel:
+                self._go_to_level(self.current_level + 1)
             except Win:
-                self.map.clear()
-                self.map = self._init_map()
-                self.map.hide()
-                self.win_map.on_screen = True
+                self._go_to_level(len(self.levels)-1)
                 self.win_time = datetime.datetime.now()
                 pygame.display.flip()
                 self.clock.tick(self.framerate)
@@ -120,8 +124,16 @@ class Game:
         for entity in Entity.entities_by_id.values():
             entity.frame()
 
-    def _init_map(self):
-        return Map()
+    def _init_level(self, level: int):
+        self.levels[level] = self.levels[level]()
+
+    def _go_to_level(self, level: int):
+        self.levels[self.current_level].clear()
+        self.levels[self.current_level].hide()
+        self.levels[self.current_level] = type(self.levels[level])
+        self.current_level = level
+        self._init_level(self.current_level)
+        self.levels[level].on_screen = True
 
 
 @dataclass
@@ -209,7 +221,7 @@ class Entity(Screenable, Collidable):
         self.on_screen = False
 
     def frame(self):
-        if self.alive and self.on_screen and self.frame_callback:
+        if self.alive and self.frame_callback:
             self.frame_callback(self)
 
 
@@ -299,6 +311,16 @@ class Enemy(MovableEntity):
     pass
 
 
+class EnemyTouch(Enemy):
+    def frame(self):
+        if self.on_screen:
+            for player in Player.players_by_id.values():
+                if self.rect.colliderect(player.rect):
+                    raise GameOver()
+
+        super().frame()
+
+
 class Player(MovableEntity):
     players_by_id: dict[str, "Player"] = {}
 
@@ -355,7 +377,7 @@ class Player(MovableEntity):
             self.move(x, y)
 
 
-class Map(Playable, Screenable):
+class Level1(Playable, Screenable):
     on_screen: bool = True
     player: Player = None
 
@@ -385,24 +407,18 @@ class Map(Playable, Screenable):
         ]
 
     def create_entities(self) -> list[Entity]:
-        def create_enemy() -> Enemy:
-            def frame(enemy: Enemy) -> None:
-                for player in Player.players_by_id.values():
-                    if enemy.rect.colliderect(player.rect):
-                        raise GameOver()
-
+        def create_enemy() -> EnemyTouch:
             start_route = Route((810, 202))
             start_route.next = Route((810, 500))
             start_route.next.next = start_route
 
-            return Enemy(
+            return EnemyTouch(
                 810,
                 202,
                 120,
                 105,
                 "black",
                 "../assets/monster_3.png",
-                frame,
                 route=start_route,
                 on_route=True,
                 speed=5,
@@ -430,7 +446,7 @@ class Map(Playable, Screenable):
             def frame(graal: Entity):
                 player = self.player
                 if graal.rect.colliderect(player.rect):
-                    raise Win()
+                    raise NextLevel()
 
             return Entity(
                 400,
@@ -485,6 +501,151 @@ class Map(Playable, Screenable):
         self.on_screen = False
 
 
+class Level2(Playable, Screenable):
+    on_screen: bool = True
+    player: Player = None
+
+    def __init__(self):
+        super().__init__()
+        self.player = self.create_player()
+        self.walls = self.create_walls()
+        self.entities = self.create_entities()
+
+    def clear(self):
+        self.player.clear()
+        for wall in self.walls:
+            wall.clear()
+
+        for entity in self.entities:
+            entity.clear()
+
+    def create_walls(self) -> list[Wall]:
+        return [
+            Wall(102, 250, 5, 400, "black"),
+            Wall(500, 602, 800, 5, "black"),
+            Wall(902, 327, 5, 555, "black"),
+            Wall(500, 52, 800, 5, "black"),
+            Wall(400, 452, 600, 5, "black"),
+            Wall(702, 125, 5, 150, "black"),
+            Wall(702, 402, 5, 105, "black"),
+        ]
+
+    def create_entities(self) -> list[Entity]:
+        def create_enemy() -> EnemyTouch:
+            start_route = Route((810, 202))
+            start_route.next = Route((810, 500))
+            start_route.next.next = start_route
+
+            return EnemyTouch(
+                810,
+                202,
+                120,
+                105,
+                "black",
+                "../assets/monster_3.png",
+                route=start_route,
+                on_route=True,
+                speed=5,
+            )
+
+        def create_key() -> Entity:
+            def frame(key: Entity):
+                player = self.player
+                if key.rect.colliderect(player.rect):
+                    key.hide()
+                    door.hide()
+                    door_opened.on_screen = True
+
+            return Entity(
+                795,
+                105,
+                50,
+                50,
+                "black",
+                "../assets/key.png",
+                frame,
+            )
+
+        def create_graal() -> Entity:
+            def frame(graal: Entity):
+                player = self.player
+                if graal.rect.colliderect(player.rect):
+                    raise Win()
+
+            return Entity(
+                400,
+                300,
+                100,
+                100,
+                "black",
+                "../assets/graal.png",
+                frame,
+            )
+
+        def create_enemy2() -> EnemyTouch:
+            def frame(enemy: EnemyTouch) -> None:
+                if datetime.datetime.now() - enemy._last_active > datetime.timedelta(seconds=2):
+                    spikes.hide()
+                    enemy._last_active = datetime.datetime.now()
+                elif datetime.datetime.now() - enemy._last_active > datetime.timedelta(seconds=1):
+                    spikes.on_screen = True
+
+            spikes = EnemyTouch(
+                600,
+                530,
+                200,
+                200,
+                "black",
+                "../assets/spikes.png",
+                frame_callback=frame,
+            )
+            spikes._last_active = datetime.datetime.now()
+            spikes.hide()
+            return spikes
+
+        door = Wall(
+            702,
+            272,
+            5,
+            145,
+            "brown",
+        )
+        door_opened = Wall(
+            627,
+            202,
+            145,
+            5,
+            "brown",
+        )
+        door_opened.hide()
+
+        return [create_enemy(), create_enemy2(), door, door_opened, create_key(), create_graal()]
+
+    def create_player(self) -> Player:
+        return Player(
+            10,
+            10,
+            40,
+            30,
+            "black",
+            "../assets/red_ball.png",
+        )
+
+    def show(self, screen: pygame.surface.Surface) -> None:
+        if not self.on_screen:
+            return
+
+        self.player.show(screen)
+        for wall in self.walls:
+            wall.show(screen)
+
+        for entity in self.entities:
+            entity.show(screen)
+
+    def hide(self) -> None:
+        self.on_screen = False
+
+
 class WinMap(Screenable):
     on_screen: bool = False
 
@@ -498,6 +659,9 @@ class WinMap(Screenable):
             "black",
             "../assets/win.png",
         )
+
+    def clear(self) -> None:
+        self.title.clear()
 
     def show(self, screen: pygame.surface.Surface) -> None:
         if not self.on_screen:

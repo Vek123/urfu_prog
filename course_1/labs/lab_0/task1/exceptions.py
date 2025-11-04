@@ -10,3 +10,7 @@ class GameOver(Exception):
 
 class Win(Exception):
     pass
+
+
+class NextLevel(Exception):
+    pass
