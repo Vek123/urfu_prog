@@ -68,7 +68,6 @@ class Game:
         self.screen = screen
         self.framerate = framerate
         self.clock = pygame.time.Clock()
-        self.objects_on_screen = set()
         self.win_time = None
 
     def frame(self) -> None:
@@ -117,14 +116,6 @@ class Game:
     def before_start(self) -> None: ...
 
     def stop(self) -> None: ...
-
-    def add_object_to_screen(self, obj: Screenable) -> None:
-        obj.show(self.screen)
-        self.objects_on_screen.add(obj)
-
-    def remove_object_from_screen(self, obj: Screenable) -> None:
-        obj.hide()
-        self.objects_on_screen.remove(obj)
 
     def _handle_entities(self) -> None:
         for entity in Entity.entities_by_id.values():
