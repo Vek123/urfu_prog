@@ -18,6 +18,10 @@ class Screenable(abc.ABC):
     @abc.abstractmethod
     def on_screen(self) -> bool: ...
 
+    @property
+    @abc.abstractmethod
+    def surf(self) -> pygame.Surface: ...
+
     @abc.abstractmethod
     def show(self, screen: pygame.surface.Surface) -> None: ...
 
@@ -54,10 +58,11 @@ class Movable(abc.ABC):
 
 class Game:
     def __init__(self, screen: pygame.surface.Surface, framerate: int = 60):
-        self.current_level = 1
+        self.current_level = 0
         self.levels: list[Screenable] = [
             Level1(),
             Level2,
+            Level3,
             WinMap,
         ]
         self.screen = screen
@@ -75,7 +80,8 @@ class Game:
         self.before_start()
         pygame.display.flip()
         while True:
-            CURRENT_EVENTS[:] = pygame.event.get()
+            global CURRENT_EVENTS
+            CURRENT_EVENTS = pygame.event.get()
             for event in CURRENT_EVENTS:
                 if event.type == pygame.QUIT:
                     self.stop()
@@ -103,7 +109,7 @@ class Game:
             except NextLevel:
                 self._go_to_level(self.current_level + 1)
             except Win:
-                self._go_to_level(len(self.levels)-1)
+                self._go_to_level(len(self.levels) - 1)
                 self.win_time = datetime.datetime.now()
                 pygame.display.flip()
                 self.clock.tick(self.framerate)
@@ -133,7 +139,7 @@ class Game:
         self.levels[self.current_level] = type(self.levels[level])
         self.current_level = level
         self._init_level(self.current_level)
-        self.levels[level].on_screen = True
+        self.levels[self.current_level].on_screen = True
 
 
 @dataclass
@@ -149,6 +155,7 @@ class Entity(Screenable, Collidable):
     on_screen: bool = True
     entities_by_id: dict[int, "Entity"] = {}
     alive: bool = True
+    surf: pygame.Surface = None
     __next_id: int = 0
 
     def __init__(
@@ -157,7 +164,7 @@ class Entity(Screenable, Collidable):
         y: float,
         width: float,
         height: float,
-        color: Any,
+        color: Any | None = None,
         img_path: str | None = None,
         frame_callback: Callable | None = None,
     ):
@@ -171,23 +178,18 @@ class Entity(Screenable, Collidable):
         self.frame_callback = frame_callback
         Entity.entities_by_id[self.id] = self
         if img_path:
-            img = pygame.image.load(img_path).convert_alpha()
-            self.img = pygame.transform.scale(img, (self.width, self.height))
-            rect = self.img.get_rect(
-                left=self.left,
-                top=self.top,
-                width=self.width,
-                height=self.height,
-            )
+            surf = pygame.image.load(img_path).convert_alpha()
+            self.surf = pygame.transform.scale(surf, (self.width, self.height))
         else:
-            rect = pygame.Rect(
-                self.left,
-                self.top,
-                self.width,
-                self.height,
-            )
+            self.surf = pygame.Surface((self.width, self.height))
+            self.surf.fill(self.color)
 
-        rect.center = (self.x, self.y)
+        rect = self.surf.get_rect(
+            left=self.left,
+            top=self.top,
+            width=self.width,
+            height=self.height,
+        )
         self.rect = rect
 
     def clear(self):
@@ -212,10 +214,7 @@ class Entity(Screenable, Collidable):
         if not self.on_screen:
             return
 
-        if self.img:
-            screen.blit(self.img, self.rect)
-        else:
-            pygame.draw.rect(screen, self.color, self.rect)
+        screen.blit(self.surf, self.rect)
 
     def hide(self) -> None:
         self.on_screen = False
@@ -247,7 +246,7 @@ class MovableEntity(Entity, Movable):
         y,
         width,
         height,
-        color,
+        color=None,
         img_path=None,
         frame_callback=None,
         route: Route | None = None,
@@ -330,7 +329,7 @@ class Player(MovableEntity):
         top,
         width,
         height,
-        color,
+        color=None,
         img_path=None,
         frame_callback=None,
     ):
@@ -379,6 +378,7 @@ class Player(MovableEntity):
 
 class Level1(Playable, Screenable):
     on_screen: bool = True
+    surf: pygame.Surface = None
     player: Player = None
 
     def __init__(self):
@@ -386,6 +386,8 @@ class Level1(Playable, Screenable):
         self.player = self.create_player()
         self.walls = self.create_walls()
         self.entities = self.create_entities()
+        self.surf = pygame.Surface(DISPLAY_RESOLUTION)
+        self.surf.fill((255, 255, 255))
 
     def clear(self):
         self.player.clear()
@@ -417,8 +419,7 @@ class Level1(Playable, Screenable):
                 202,
                 120,
                 105,
-                "black",
-                "../assets/monster_3.png",
+                img_path="../assets/monster_3.png",
                 route=start_route,
                 on_route=True,
                 speed=5,
@@ -437,9 +438,8 @@ class Level1(Playable, Screenable):
                 105,
                 50,
                 50,
-                "black",
-                "../assets/key.png",
-                frame,
+                img_path="../assets/key.png",
+                frame_callback=frame,
             )
 
         def create_graal() -> Entity:
@@ -453,9 +453,8 @@ class Level1(Playable, Screenable):
                 300,
                 100,
                 100,
-                "black",
-                "../assets/graal.png",
-                frame,
+                img_path="../assets/graal.png",
+                frame_callback=frame,
             )
 
         door = Wall(
@@ -482,20 +481,22 @@ class Level1(Playable, Screenable):
             10,
             40,
             30,
-            "black",
-            "../assets/red_ball.png",
+            img_path="../assets/red_ball.png",
         )
 
     def show(self, screen: pygame.surface.Surface) -> None:
         if not self.on_screen:
             return
 
-        self.player.show(screen)
+        self.player.show(self.surf)
         for wall in self.walls:
-            wall.show(screen)
+            wall.show(self.surf)
 
         for entity in self.entities:
-            entity.show(screen)
+            entity.show(self.surf)
+
+        screen.blit(self.surf, (0, 0))
+        self.surf.fill((255, 255, 255))
 
     def hide(self) -> None:
         self.on_screen = False
@@ -504,12 +505,15 @@ class Level1(Playable, Screenable):
 class Level2(Playable, Screenable):
     on_screen: bool = True
     player: Player = None
+    surf: pygame.Surface = None
 
     def __init__(self):
         super().__init__()
         self.player = self.create_player()
         self.walls = self.create_walls()
         self.entities = self.create_entities()
+        self.surf = pygame.Surface(DISPLAY_RESOLUTION)
+        self.surf.fill((255, 255, 255))
 
     def clear(self):
         self.player.clear()
@@ -541,8 +545,7 @@ class Level2(Playable, Screenable):
                 202,
                 120,
                 105,
-                "black",
-                "../assets/monster_3.png",
+                img_path="../assets/monster_3.png",
                 route=start_route,
                 on_route=True,
                 speed=5,
@@ -561,25 +564,23 @@ class Level2(Playable, Screenable):
                 105,
                 50,
                 50,
-                "black",
-                "../assets/key.png",
-                frame,
+                img_path="../assets/key.png",
+                frame_callback=frame,
             )
 
         def create_graal() -> Entity:
             def frame(graal: Entity):
                 player = self.player
                 if graal.rect.colliderect(player.rect):
-                    raise Win()
+                    raise NextLevel()
 
             return Entity(
                 400,
                 300,
                 100,
                 100,
-                "black",
-                "../assets/graal.png",
-                frame,
+                img_path="../assets/graal.png",
+                frame_callback=frame,
             )
 
         def create_enemy2() -> EnemyTouch:
@@ -595,8 +596,7 @@ class Level2(Playable, Screenable):
                 530,
                 200,
                 200,
-                "black",
-                "../assets/spikes.png",
+                img_path="../assets/spikes.png",
                 frame_callback=frame,
             )
             spikes._last_active = datetime.datetime.now()
@@ -627,38 +627,188 @@ class Level2(Playable, Screenable):
             10,
             40,
             30,
-            "black",
-            "../assets/red_ball.png",
+            img_path="../assets/red_ball.png",
         )
 
     def show(self, screen: pygame.surface.Surface) -> None:
         if not self.on_screen:
             return
 
-        self.player.show(screen)
+        self.player.show(self.surf)
         for wall in self.walls:
-            wall.show(screen)
+            wall.show(self.surf)
 
         for entity in self.entities:
-            entity.show(screen)
+            entity.show(self.surf)
+
+        screen.blit(self.surf, (0, 0))
+        self.surf.fill((255, 255, 255))
+
+    def hide(self) -> None:
+        self.on_screen = False
+
+
+class Level3(Playable, Screenable):
+    on_screen: bool = True
+    player: Player = None
+    surf: pygame.Surface = None
+
+    def __init__(self):
+        super().__init__()
+        self.player = self.create_player()
+        self.walls = self.create_walls()
+        self.entities = self.create_entities()
+        self.surf = pygame.Surface(DISPLAY_RESOLUTION)
+        self.surf.fill((255, 255, 255))
+
+    def clear(self):
+        self.player.clear()
+        for wall in self.walls:
+            wall.clear()
+
+        for entity in self.entities:
+            entity.clear()
+
+    def create_walls(self) -> list[Wall]:
+        return [
+            EnemyTouch(102, 250, 5, 400, "black"),
+            EnemyTouch(500, 602, 800, 5, "black"),
+            EnemyTouch(902, 327, 5, 555, "black"),
+            EnemyTouch(500, 52, 800, 5, "black"),
+            EnemyTouch(400, 452, 600, 5, "black"),
+            EnemyTouch(702, 125, 5, 150, "black"),
+            EnemyTouch(702, 402, 5, 105, "black"),
+        ]
+
+    def create_entities(self) -> list[Entity]:
+        def create_enemy() -> EnemyTouch:
+            start_route = Route((810, 202))
+            start_route.next = Route((810, 500))
+            start_route.next.next = start_route
+
+            return EnemyTouch(
+                810,
+                202,
+                120,
+                105,
+                img_path="../assets/monster_3.png",
+                route=start_route,
+                on_route=True,
+                speed=5,
+            )
+
+        def create_key() -> Entity:
+            def frame(key: Entity):
+                player = self.player
+                if key.rect.colliderect(player.rect):
+                    key.hide()
+                    door.hide()
+                    door_opened.on_screen = True
+
+            return Entity(
+                795,
+                105,
+                50,
+                50,
+                img_path="../assets/key.png",
+                frame_callback=frame,
+            )
+
+        def create_graal() -> Entity:
+            def frame(graal: Entity):
+                player = self.player
+                if graal.rect.colliderect(player.rect):
+                    raise Win()
+
+            return Entity(
+                400,
+                300,
+                100,
+                100,
+                img_path="../assets/graal.png",
+                frame_callback=frame,
+            )
+
+        def create_enemy2() -> EnemyTouch:
+            def frame(enemy: EnemyTouch) -> None:
+                if datetime.datetime.now() - enemy._last_active > datetime.timedelta(seconds=2):
+                    spikes.hide()
+                    enemy._last_active = datetime.datetime.now()
+                elif datetime.datetime.now() - enemy._last_active > datetime.timedelta(seconds=1):
+                    spikes.on_screen = True
+
+            spikes = EnemyTouch(
+                600,
+                530,
+                200,
+                200,
+                img_path="../assets/spikes.png",
+                frame_callback=frame,
+            )
+            spikes._last_active = datetime.datetime.now()
+            spikes.hide()
+            return spikes
+
+        door = Wall(
+            702,
+            272,
+            5,
+            145,
+            "brown",
+        )
+        door_opened = Wall(
+            627,
+            202,
+            145,
+            5,
+            "brown",
+        )
+        door_opened.hide()
+
+        return [create_enemy(), create_enemy2(), door, door_opened, create_key(), create_graal()]
+
+    def create_player(self) -> Player:
+        return Player(
+            10,
+            10,
+            40,
+            30,
+            img_path="../assets/red_ball.png",
+        )
+
+    def show(self, screen: pygame.surface.Surface) -> None:
+        if not self.on_screen:
+            return
+
+        self.player.show(self.surf)
+        for wall in self.walls:
+            wall.show(self.surf)
+
+        for entity in self.entities:
+            entity.show(self.surf)
+
+        screen.blit(self.surf, (0, 0))
+        self.surf.fill((255, 255, 255))
 
     def hide(self) -> None:
         self.on_screen = False
 
 
 class WinMap(Screenable):
-    on_screen: bool = False
+    on_screen: bool = True
+    surf: pygame.Surface = None
 
     def __init__(self):
         super().__init__()
         self.title = Entity(
             DISPLAY_RESOLUTION[0] // 2,
             DISPLAY_RESOLUTION[1] // 2,
-            1280,
-            720,
-            "black",
-            "../assets/win.png",
+            DISPLAY_RESOLUTION[0] // 2,
+            DISPLAY_RESOLUTION[1] // 2,
+            img_path="../assets/win.png",
         )
+        self.surf = pygame.Surface(DISPLAY_RESOLUTION)
+        self.surf.fill((255, 255, 255))
 
     def clear(self) -> None:
         self.title.clear()
@@ -667,7 +817,8 @@ class WinMap(Screenable):
         if not self.on_screen:
             return
 
-        self.title.show(screen)
+        self.title.show(self.surf)
+        screen.blit(self.surf, (0, 0))
 
     def hide(self) -> None:
         self.on_screen = False
