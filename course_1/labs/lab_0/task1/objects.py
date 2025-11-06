@@ -305,7 +305,7 @@ class EnemyTouch(Enemy):
     def frame(self):
         if self.on_screen:
             for player in Player.players_by_id.values():
-                if self.rect.colliderect(player.rect):
+                if self.is_collide(player):
                     raise GameOver()
 
         super().frame()
@@ -419,7 +419,7 @@ class Level1(Playable, Screenable):
         def create_key() -> Entity:
             def frame(key: Entity):
                 player = self.player
-                if key.rect.colliderect(player.rect):
+                if key.is_collide(player):
                     key.hide()
                     door.hide()
                     door_opened.on_screen = True
@@ -436,7 +436,7 @@ class Level1(Playable, Screenable):
         def create_graal() -> Entity:
             def frame(graal: Entity):
                 player = self.player
-                if graal.rect.colliderect(player.rect):
+                if graal.is_collide(player):
                     raise NextLevel()
 
             return Entity(
@@ -545,7 +545,7 @@ class Level2(Playable, Screenable):
         def create_key() -> Entity:
             def frame(key: Entity):
                 player = self.player
-                if key.rect.colliderect(player.rect):
+                if key.is_collide(player):
                     key.hide()
                     door.hide()
                     door_opened.on_screen = True
@@ -562,7 +562,7 @@ class Level2(Playable, Screenable):
         def create_graal() -> Entity:
             def frame(graal: Entity):
                 player = self.player
-                if graal.rect.colliderect(player.rect):
+                if graal.is_collide(player):
                     raise NextLevel()
 
             return Entity(
@@ -691,7 +691,7 @@ class Level3(Playable, Screenable):
         def create_key() -> Entity:
             def frame(key: Entity):
                 player = self.player
-                if key.rect.colliderect(player.rect):
+                if key.is_collide(player):
                     key.hide()
                     door.hide()
                     door_opened.on_screen = True
@@ -708,7 +708,7 @@ class Level3(Playable, Screenable):
         def create_graal() -> Entity:
             def frame(graal: Entity):
                 player = self.player
-                if graal.rect.colliderect(player.rect):
+                if graal.is_collide(player):
                     raise Win()
 
             return Entity(
