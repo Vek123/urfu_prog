@@ -284,7 +284,7 @@ class MovableEntity(Entity, Movable):
         self.y += y
 
     def frame(self):
-        if self.on_screen and self.on_route and self.route:
+        if self.alive and self.on_route and self.route:
             if self.rect.center != self.route.coords:
                 x_dist = self.route.coords[0] - self.x
                 y_dist = self.route.coords[1] - self.y
